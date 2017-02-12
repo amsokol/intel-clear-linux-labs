@@ -1,0 +1,131 @@
+# DO NOT RUN THIS SCRIPT - EXECUTE COMMANDS ONE BY ONE
+
+# Configuration:
+# docker-icc-host01.amsokol.me - host to install Intel Clear Linux
+
+
+# <STEP #01>: CONFIGURE DNS
+# add to BIND forward.amsokol.me.zone file:
+@                      IN  A    192.168.0.103
+
+docker-icc-host01      IN  A    192.168.0.103
+
+# add to BIND reverse.amsokol.me.zone file:
+docker-icc-host01      IN  A    192.168.0.103
+
+103                    IN  PTR  docker-icc-host01.amsokol.me.
+
+# check BIND Configuration
+# reload BIND Configuration
+# </STEP #01>
+
+
+# <STEP #02>: install and configure docker-icc-host01.amsokol.me
+# Configuration:
+# OS = CentOS Minimal
+# CPU = 4
+# RAM = 4G
+# docker-icc-host01.amsokol.me.vhdx = 11G
+# docker-icc-host01.amsokol.me-swap.vhdx = 5G
+# docker-icc-host01.amsokol.me-docker.vhdx = 256G
+# IPv4 Settings = Manual
+# IP = 192.168.0.103
+# Mask = 255.255.255.0
+# Gateway = 192.168.0.1
+# DNS server = 192.168.0.1
+
+# before start VM run following in Administrative PowerShell
+Set-VMProcessor -VMName docker-icc-host01.amsokol.me -ExposeVirtualizationExtensions $true
+# create check point "before first run"
+
+# login as root
+
+# set hostname
+hostnamectl set-hostname docker-icc-host01.amsokol.me
+
+# configure network
+mv /usr/lib/systemd/network/80-dhcp.network /usr/lib/systemd/network/80-dhcp.network.backup
+
+nano /usr/lib/systemd/network/80-eth0.network
+# [Match]
+# Name=eth0
+# [Network]
+# Address=192.168.0.103/24
+# Gateway=192.168.0.1
+# DNS=192.168.0.1
+
+# allow ssh root access
+nano /etc/ssh/sshd_config
+# PermitRootLogin yes
+reboot
+
+swupd update
+
+# set timezone
+timedatectl set-timezone UTC
+timedatectl set-ntp true
+timedatectl status
+
+reboot
+poweroff
+# create check point "configured and updated"
+
+pvcreate /dev/sdb
+# check success:
+pvdisplay /dev/sdb
+vgcreate vg-swap /dev/sdb
+# check success:
+vgdisplay vg-swap
+lvcreate -n vol_swap -l 100%FREE vg-swap
+# check success:
+lvdisplay
+mkswap /dev/vg-swap/vol_swap
+
+nano /etc/fstab
+# add:
+# /dev/vg-swap/vol_swap      none            swap  defaults  0  0
+reboot
+swapon -s
+poweroff
+# create check point "added swap"
+
+
+pvcreate /dev/sdc
+# check success:
+pvdisplay /dev/sdc
+vgcreate vg-docker /dev/sdc
+# check success:
+vgdisplay vg-docker
+lvcreate -n vol_docker -l 100%FREE vg-docker
+# check success:
+lvdisplay
+mkfs.ext4 /dev/vg-docker/vol_docker
+# check success:
+blkid /dev/vg-docker/vol_docker
+systemctl stop docker
+systemctl stop docker-cor
+rm -rf /var/lib/docker/*
+
+nano /etc/fstab
+# add:
+# /dev/vg-docker/vol_docker  /var/lib/docker ext4  defaults  0  2
+
+reboot
+df -k
+docker info
+poweroff
+# create check point "added docker storage"
+
+curl -O https://download.clearlinux.org/current/clear-linux-check-config.sh
+chmod +x clear-linux-check-config.sh
+./clear-linux-check-config.sh container
+swupd bundle-add containers-basic
+systemctl enable docker
+systemctl disable docker
+systemctl enable docker-cor
+reboot
+docker info
+poweroff
+# create check point "added clear containers"
+
+# </STEP #02>
